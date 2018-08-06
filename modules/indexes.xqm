@@ -704,7 +704,12 @@ declare function indexes:get-namespace-declaration-from-node-name($node-name as 
     Helper function: gets the label for a given index-name
 :)
 declare function indexes:index-name-to-label($index-name as xs:string) as xs:string {
-    $indexes:index-names//item[value eq $index-name]/label/text() 
+    let $known-index := $indexes:index-names//item[value eq $index-name]
+    return
+        if ($known-index) then 
+            $known-index/label/string()
+        else
+            $index-name
 };
 
 (:
