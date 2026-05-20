@@ -41,6 +41,7 @@
     "license": "LGPL-2.1-or-later"
   },
   "dependencies": {
+    "@joewiz/semantic-release-expath": "github:joewiz/semantic-release-expath",
     "admin-lte": "^2.4.18",
     "datatables.net-responsive": "^3.0.8",
     "datatables.net-responsive-bs": "^3.0.8",
