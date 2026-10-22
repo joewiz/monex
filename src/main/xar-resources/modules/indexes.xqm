@@ -390,6 +390,14 @@ declare function indexes:xconf-to-table($node as node(), $model as map(*)) as it
                     {if (not($has-data)) then <span class="indexes-no-data">Data collection missing</span> else ()}
                 </div>
                 {indexes:lucene-settings($xconf)}
+                {
+                    if ($xconf/cc:index/cc:lucene/cc:text) then
+                        <div class="indexes-exide-link indexes-preview-link">
+                            <a href="index-preview.html?collection={encode-for-uri($data-collection-name)}">Preview a node</a>
+                            <span class="indexes-item-muted"> · the text and tokens the Lucene index has for a node</span>
+                        </div>
+                    else ()
+                }
                 <h4 class="indexes-section-title">Index definitions</h4>
                 <div class="indexes-table-wrap">
                     <table class="table table-striped indexes-definitions">
@@ -628,7 +636,8 @@ function indexes:show-index-keys($node as node(), $model as map(*)) {
                 <tr>{
                     for $column in ('term', 'frequency', 'documents', 'position')
                     return
-                        <th><a href="{indexes:set-sortorder($column)}">{$column} {indexes:sort-direction-indicator($column)}</a></th>
+                        <th><a href="{indexes:set-sortorder($column)}">{$column} {indexes:sort-direction-indicator($column)}</a></th>,
+                    if ($indexes:index eq 'lucene-index' and $indexes:show-keys-by eq 'field') then <th>nodes</th> else ()
                 }</tr>
                 { $sorted-keys }
             </table>
@@ -905,12 +914,24 @@ declare function indexes:term-callback($term as xs:anyAtomicType, $data as xs:un
     Helper function: the terms of a Lucene field in a collection's documents, stored or not
 :)
 declare function indexes:lucene-field-keys($collection as xs:string, $field as xs:string) as element(tr)* {
-    collection($collection)/ft:index-keys-for-field(
+    for $row in collection($collection)/ft:index-keys-for-field(
         $field,
         if ($indexes:start-value ne '') then $indexes:start-value else (),
         $indexes:callback,
         $indexes:max-number-returned
     )
+    return
+        <tr>
+            {$row/td}
+            <td class="indexes-drill-links">{
+                indexes:browse-link(
+                    'index-preview.html?collection=' || encode-for-uri($collection)
+                        || '&amp;field=' || encode-for-uri($field)
+                        || '&amp;term=' || encode-for-uri($row/td[1]),
+                    'Preview nodes'
+                )
+            }</td>
+        </tr>
 };
 
 (:

@@ -18,6 +18,7 @@ import module namespace lib="http://exist-db.org/xquery/html-templating/lib";
 import module namespace config="http://exist-db.org/apps/admin/config" at "config.xqm";
 import module namespace app="http://exist-db.org/apps/admin/templates" at "app.xql";
 import module namespace indexes="http://exist-db.org/xquery/admin-interface/indexes" at "indexes.xqm";
+import module namespace preview="http://exist-db.org/xquery/admin-interface/index-preview" at "index-preview.xqm";
 
 declare option exist:serialize "method=html5 media-type=text/html";
 

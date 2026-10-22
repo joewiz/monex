@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    SPDX LGPL-2.1-or-later
+    Copyright (C) 2014 The eXist-db Authors
+
+-->
+<div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content">
+    <section class="content-header">
+        <h1>
+            Browse Indexes <small>Index preview</small>
+        </h1>
+        <ol class="breadcrumb">
+            <li>
+                <a href="index.html">
+                    <i class="fa fa-dashboard"/> Home</a>
+            </li>
+            <li>
+                <a href="indexes.html">
+                    <i class="fa fa-sort-alpha-desc"/> Indexes</a>
+            </li>
+            <li data-template="indexes:current-collection">Collection</li>
+            <li class="active" data-template="preview:current-node">Preview</li>
+        </ol>
+    </section>
+
+    <section class="content indexes-browse">
+        <div class="callout callout-info indexes-intro">
+            How the Lucene index sees a node: the text each index and field on it gets, and the tokens each
+            one's analyzer makes of it. Analyze a query string for a field to see why a search does or doesn't
+            match.
+            <br/>
+            Each token's offsets, and the text they cover, are as the analyzer reports them: a filter can change
+            them, as <code>flattenGraph</code> does for a token that <code>wordDelimiterGraph</code> preserves.
+        </div>
+        <div class="box">
+            <div class="box-header with-border">
+                <h3 class="box-title" data-template="preview:current-node"/>
+            </div>
+            <div class="box-body no-padding" data-template="preview:show"/>
+        </div>
+    </section>
+</div>

@@ -1720,3 +1720,61 @@ body > .header .logo {
     font-size: 13px;
     color: #666;
 }
+
+.indexes-browse .preview-text,
+.indexes-browse .preview-query {
+    border-bottom: 1px solid #f0f0f0;
+    padding-bottom: 8px;
+}
+
+.indexes-browse .preview-field,
+.indexes-browse .preview-source,
+.indexes-browse .preview-tokens,
+.indexes-browse .preview-note,
+.indexes-browse .preview-query-result {
+    padding: 4px 16px;
+}
+
+.indexes-browse .preview-field {
+    margin-top: 8px;
+    border-top: 1px dashed #eee;
+}
+
+.indexes-browse .preview-field-title {
+    margin: 6px 0 2px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.indexes-browse .preview-source-text {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    font-size: 12px;
+}
+
+.indexes-browse .preview-token-table {
+    width: auto;
+    margin: 4px 0 0;
+}
+
+.indexes-browse tr.preview-token-span td {
+    background-color: #f4fbff;
+}
+
+.indexes-browse .preview-query-matches {
+    margin: 6px 0 0;
+    padding-left: 1.5em;
+    font-size: 13px;
+}
+
+.indexes-browse .preview-match {
+    color: #00733b;
+}
+
+.indexes-browse .preview-no-match {
+    color: #c23321;
+}
+
+.indexes-browse summary.preview-field-title {
+    cursor: pointer;
+}
