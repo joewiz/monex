@@ -18,6 +18,7 @@ declare namespace range="http://exist-db.org/xquery/range";
 
 (:import module namespace console="http://exist-db.org/xquery/console";:)
 import module namespace templates="http://exist-db.org/xquery/html-templating";
+import module namespace ft="http://exist-db.org/xquery/lucene";
 
 (: 
     Global variables - derived from URL parameters
@@ -388,6 +389,7 @@ declare function indexes:xconf-to-table($node as node(), $model as map(*)) as it
                     <a href="{$link}" target="eXide" class="eXide-open" data-exide-open="{$resource}">Open .xconf in eXide</a>
                     {if (not($has-data)) then <span class="indexes-no-data">Data collection missing</span> else ()}
                 </div>
+                {indexes:lucene-settings($xconf)}
                 <h4 class="indexes-section-title">Index definitions</h4>
                 <div class="indexes-table-wrap">
                     <table class="table table-striped indexes-definitions">
@@ -454,6 +456,9 @@ function indexes:show-index-keys($node as node(), $model as map(*)) {
             return
                 switch ($indexes:show-keys-by)
                     case "field" return
+                      if ($indexes:index eq "lucene-index") then
+                        indexes:lucene-field-keys($indexes:collection, $indexes:field)
+                      else
                       let $rows :=
                         (: Use the range function in $indexes:range-lookup to determine which arity to 
                           use with range:index-keys-for-field(). We can't re-use $indexes:range-lookup 
@@ -793,11 +798,11 @@ function indexes:show-field($node as node(), $model as map(*)) {
             else 
                 $indexes:match
             , 
-            '[ft:query(., '
+            (: an empty query matches every node indexed, without a leading wildcard over the field, and finds
+               typed fields' values too :)
+            '[ft:query(., ()'
             ,
-            ('"' || $indexes:field || ':*"')
-            ,
-            ', map { "leading-wildcard": "yes", "filter-rewrite": "yes", "fields": ("', $indexes:field, '") }'
+            ', map { "fields": ("', $indexes:field, '") }'
             ,
             ')]'
             ,
@@ -897,11 +902,23 @@ declare function indexes:term-callback($term as xs:anyAtomicType, $data as xs:un
 };
 
 (:
+    Helper function: the terms of a Lucene field in a collection's documents, stored or not
+:)
+declare function indexes:lucene-field-keys($collection as xs:string, $field as xs:string) as element(tr)* {
+    collection($collection)/ft:index-keys-for-field(
+        $field,
+        if ($indexes:start-value ne '') then $indexes:start-value else (),
+        $indexes:callback,
+        $indexes:max-number-returned
+    )
+};
+
+(:
     Analyzes the Lucene indexes in an index definition
 :)
 declare function indexes:analyze-lucene-indexes($xconf) {
-    let $lucene := $xconf/cc:index/cc:lucene 
-    return if (not($lucene) or not($lucene/cc:text)) then () else 
+    let $lucene := $xconf/cc:index/cc:lucene
+    return if (not($lucene) or not($lucene/cc:text)) then () else
         (
         let $texts := $lucene//cc:text
         return
@@ -915,24 +932,28 @@ declare function indexes:analyze-lucene-indexes($xconf) {
             let $facets-fields := $text/(cc:facet | cc:field | cc:vector-field)
             return
             (
-                <tr>
+                <tr class="indexes-text-row" data-indexed="{if ($qname) then $qname else $match}">
                     <td>
                         {if ($qname) then $qname else $match}
                         {if ($no-index) then " (not indexed)" else ()}
                         {if ($text/@boost) then concat(' (boost: ', $text/@boost/string(), ')') else ()}
-                        {if ($text/cc:ignore) then (<br/>, concat('(ignore: ', string-join(for $ignore in $text/cc:ignore return $ignore/@qname/string(), ', '), ')')) else ()}</td>
+                        {indexes:inline-ignore($text)}</td>
                     <td>{indexes:index-badge('lucene-index')}</td>
-                    {indexes:type-detail-cell(
-                        concat(
-                            if ($qname) then 'QName' else 'Match',
-                            if ($analyzer) then concat(' · ', $analyzer, ' analyzer') else ' · default analyzer'
-                        )
-                    )}
+                    <td class="indexes-type-detail">{
+                        if ($qname) then 'QName' else 'Match',
+                        ' · ',
+                        indexes:analyzer-ref($analyzer, $lucene),
+                        if ($text/@field) then (' · field ', <code>{$text/@field/string()}</code>) else ()
+                    }</td>
                     <td class="indexes-drill-links">{indexes:lucene-index-keys-links($collection, $qname, $match)}</td>
                 </tr>,
                 for $f in $facets-fields
                 return
-                    <tr class="{if ($f instance of element(cc:vector-field)) then 'indexes-vector-row' else ()}">
+                    <tr class="{
+                        if ($f instance of element(cc:vector-field)) then 'indexes-vector-row'
+                        else if ($f instance of element(cc:field)) then 'indexes-field-row'
+                        else ()
+                    }">
                         <td class="indexes-item-indexed-sub">{if ($f instance of element(cc:vector-field)) then
                             $f/@name/string()
                         else
@@ -943,31 +964,33 @@ declare function indexes:analyze-lucene-indexes($xconf) {
                                 indexes:index-badge('lucene-index')
                             else if ($f instance of element(cc:vector-field)) then
                                 indexes:vector-badge()
-                            else if ($f/@store eq "no") then
+                            else if (indexes:unstored($f)) then
                                 <span class="indexes-item-muted">not stored</span>
                             else
                                 indexes:index-badge('lucene-index')
                         }</td>
-                        {indexes:type-detail-cell(
+                        {
                             if ($f instance of element(cc:vector-field)) then
-                                indexes:vector-field-label($f)
+                                indexes:type-detail-cell(indexes:vector-field-label($f))
+                            else if ($f instance of element(cc:field)) then
+                                indexes:field-detail-cell($f, $lucene)
                             else
-                                string-join(
-                                    (
-                                        string($f/name()),
-                                        if ($f/@hierarchical eq "yes") then 'hierarchical' else (),
-                                        if ($f/@store eq "no") then 'not stored' else (),
-                                        if ($f/@analyzer) then concat($f/@analyzer/string(), ' analyzer') else ()
-                                    )[normalize-space(.) ne ''],
-                                    ' · '
+                                indexes:type-detail-cell(
+                                    string-join(
+                                        (
+                                            string($f/name()),
+                                            if ($f/@hierarchical eq "yes") then 'hierarchical' else ()
+                                        ),
+                                        ' · '
+                                    )
                                 )
-                        )}
+                        }
                         <td class="indexes-drill-links">{
                             if ($f instance of element(cc:facet)) then
                                 indexes:browse-link(
                                     concat('facet.html', indexes:replace-parameters((
                                         if ($qname) then concat('node-name=', $qname) else concat('match=', $match)
-                                        , 
+                                        ,
                                         concat('collection=', $collection)
                                         ,
                                         concat('facet=', $f/@dimension)
@@ -978,24 +1001,282 @@ declare function indexes:analyze-lucene-indexes($xconf) {
                                 )
                             else if ($f instance of element(cc:vector-field)) then
                                 <span class="indexes-item-muted">Key browse not available for vector fields</span>
-                            else if ($f/@store eq "no") then
-                                <span class="indexes-item-muted">—</span>
                             else
-                                indexes:browse-link(
-                                    concat('field.html', indexes:replace-parameters((
-                                        if ($qname) then concat('node-name=', $qname) else concat('match=', $match)
-                                        , 
-                                        concat('collection=', $collection)
-                                        ,
-                                        concat('field=', $f/@name)
-                                    ))),
-                                    'Browse field'
-                                )
+                                indexes:field-browse-links($f, $lucene, $collection, $qname, $match)
                         }</td>
                     </tr>
                 )
             )
         )
+};
+
+(:
+    Helper function: whether a field's store attribute turns storing off
+:)
+declare function indexes:unstored($field as element(cc:field)) as xs:boolean {
+    $field/@store = ('no', 'false')
+};
+
+(:
+    Helper function: the analyzer an id names in a Lucene configuration; with no id, its default analyzer
+:)
+declare function indexes:analyzer-by-id($lucene as element(cc:lucene), $id as xs:string?) as element(cc:analyzer)? {
+    if ($id) then
+        $lucene/cc:analyzer[@id = $id][1]
+    else
+        $lucene/cc:analyzer[not(@id)][1]
+};
+
+(:
+    Helper function: the id of the analyzer a field uses: its own, else its text's, else the default (empty)
+:)
+declare function indexes:field-analyzer-id($field as element(cc:field)) as xs:string? {
+    ($field/@analyzer, $field/parent::cc:text/@analyzer)[1] ! string()
+};
+
+(:
+    Helper function: whether an analyzer keeps each value as a single token, as a keyword analyzer or a chain with
+    the keyword tokenizer does
+:)
+declare function indexes:keyword-analyzer($analyzer as element(cc:analyzer)?) as xs:boolean {
+    exists($analyzer) and (
+        ends-with($analyzer/@class, 'KeywordAnalyzer')
+        or $analyzer/(. | cc:index)/cc:tokenizer/@name = 'keyword'
+    )
+};
+
+(:
+    Helper function: whether a field has a type other than xs:string, or is binary
+:)
+declare function indexes:typed-field($field as element(cc:field)) as xs:boolean {
+    ($field/@type and not($field/@type = ('xs:string', 'string')))
+    or $field/@binary = ('yes', 'true')
+};
+
+(:
+    Helper function: whether a field holds values rather than analyzed text: a field with a type other than
+    xs:string, a binary field, or one with a keyword analyzer
+:)
+declare function indexes:value-field($field as element(cc:field), $lucene as element(cc:lucene)) as xs:boolean {
+    indexes:typed-field($field)
+    or indexes:keyword-analyzer(indexes:analyzer-by-id($lucene, indexes:field-analyzer-id($field)))
+};
+
+(:
+    Helper function: the HTML id of an analyzer's definition, which a row's analyzer links to
+:)
+declare function indexes:analyzer-anchor($id as xs:string?) as xs:string {
+    'analyzer-' || (if ($id) then replace($id, '[^A-Za-z0-9_-]', '_') else '_default')
+};
+
+(:
+    Helper function: an analyzer's id, linked to its definition, or flagged if the configuration doesn't define it;
+    or "default analyzer"
+:)
+declare function indexes:analyzer-ref($id as xs:string?, $lucene as element(cc:lucene)) as item()* {
+    if ($id and empty(indexes:analyzer-by-id($lucene, $id))) then
+        (<code>{$id}</code>, ' analyzer ', <span class="label label-danger indexes-analyzer-undefined">not defined</span>)
+    else if ($id) then
+        (<a href="#{indexes:analyzer-anchor($id)}" class="indexes-analyzer-ref">{$id}</a>, ' analyzer')
+    else
+        <a href="#{indexes:analyzer-anchor(())}" class="indexes-analyzer-ref">default analyzer</a>
+};
+
+(:
+    Helper function: the inline and ignore elements declared for a text or for lucene itself
+:)
+declare function indexes:inline-ignore($context as element()) as element()* {
+    for $kind in ('inline', 'ignore')
+    let $qnames := $context/*[local-name() eq $kind]/@qname/string()
+    where exists($qnames)
+    return (
+        <br/>,
+        <span class="indexes-{$kind}">({$kind}: {string-join($qnames, ', ')})</span>
+    )
+};
+
+(:
+    Helper function: a field's detail: its expression, condition, type and analyzer, whether it is binary or
+    stored, and whether ignore and inline apply to it
+:)
+declare function indexes:field-detail-cell($field as element(cc:field), $lucene as element(cc:lucene)) as element(td) {
+    let $analyzer := indexes:field-analyzer-id($field)
+    let $text := $field/parent::cc:text
+    let $has-inline-ignore := exists(($text, $lucene)/(cc:inline | cc:ignore))
+    return
+        <td class="indexes-type-detail">
+            <span class="indexes-field-props">{
+                'field',
+                if ($field/@expression) then (' · expression ', <code class="indexes-field-expression">{$field/@expression/string()}</code>) else (),
+                if ($field/@if) then (' · if ', <code class="indexes-field-if">{$field/@if/string()}</code>) else (),
+                if ($field/@type) then (' · type ', <code>{$field/@type/string()}</code>) else (),
+                if ($field/@binary = ('yes', 'true')) then ' · binary' else (),
+                if (indexes:unstored($field)) then ' · not stored' else (),
+                (: a typed or binary field's values aren't analyzed :)
+                if (indexes:typed-field($field)) then () else (' · ', indexes:analyzer-ref($analyzer, $lucene))
+            }</span>
+            <br/>
+            <span class="indexes-field-source indexes-item-muted">{
+                if ($field/@expression) then
+                    "Indexed from the expression's value; ignore and inline don't apply."
+                else if ($has-inline-ignore) then
+                    "Indexed from the extracted text, with ignore and inline applied."
+                else
+                    "Indexed from the extracted text."
+            }</span>
+            {
+                if (indexes:unstored($field) and not(indexes:value-field($field, $lucene))) then (
+                    <br/>,
+                    <span class="indexes-field-highlight indexes-item-muted">Highlighted by computing the text from the node.</span>
+                ) else ()
+            }
+        </td>
+};
+
+(:
+    Helper function: the links to browse a field: its terms, for a text field, stored or not; its stored values, for
+    a field of values
+:)
+declare function indexes:field-browse-links(
+    $field as element(cc:field),
+    $lucene as element(cc:lucene),
+    $collection as xs:string,
+    $qname as xs:string?,
+    $match as xs:string?
+) as item()* {
+    let $terms :=
+        indexes:browse-link(
+            concat('index-keys.html', indexes:replace-parameters((
+                concat('collection=', $collection),
+                'index=lucene-index',
+                'show-keys-by=field',
+                concat('field=', $field/@name)
+            ))),
+            'Browse terms'
+        )
+    let $values :=
+        indexes:browse-link(
+            concat('field.html', indexes:replace-parameters((
+                if ($qname) then concat('node-name=', $qname) else concat('match=', $match)
+                ,
+                concat('collection=', $collection)
+                ,
+                concat('field=', $field/@name)
+            ))),
+            'Browse values'
+        )
+    return
+        if (not(indexes:value-field($field, $lucene))) then
+            $terms
+        else if (not(indexes:unstored($field))) then
+            $values
+        else if (not(indexes:typed-field($field))) then
+            (: a keyword field that isn't stored: its terms are its values :)
+            $terms
+        else
+            <span class="indexes-item-muted">—</span>
+};
+
+(:
+    Shows a Lucene configuration's analyzers, and the inline and ignore elements that apply to every index in it
+:)
+declare function indexes:lucene-settings($xconf as element(cc:collection)) as element()* {
+    let $lucene := $xconf/cc:index/cc:lucene
+    where exists($lucene)
+    let $analyzers := $lucene/cc:analyzer
+    return (
+        <h4 class="indexes-section-title">Lucene analyzers</h4>,
+        <div class="indexes-table-wrap">
+            <table class="table table-striped indexes-definitions indexes-analyzers">
+                <thead>
+                    <tr>
+                        <th>Analyzer</th>
+                        <th>Definition</th>
+                    </tr>
+                </thead>
+                <tbody>{
+                    if (empty($analyzers[not(@id)])) then
+                        <tr id="{indexes:analyzer-anchor(())}">
+                            <td>default</td>
+                            <td><span class="indexes-item-muted">The database's default analyzer (Lucene's <code>StandardAnalyzer</code>, unless <code>conf.xml</code> configures another)</span></td>
+                        </tr>
+                    else (),
+                    for $analyzer in $analyzers
+                    return
+                        <tr id="{indexes:analyzer-anchor($analyzer/@id)}" class="indexes-analyzer-row">
+                            <td>{if ($analyzer/@id) then $analyzer/@id/string() else 'default'}</td>
+                            <td>{indexes:analyzer-definition($analyzer)}</td>
+                        </tr>
+                }</tbody>
+            </table>
+        </div>,
+        if ($lucene/(cc:inline | cc:ignore) or $lucene/@diacritics) then
+            <div class="indexes-lucene-global">
+                Applies to every Lucene index in this configuration:
+                {
+                    if ($lucene/@diacritics) then (<br/>, concat('(diacritics: ', $lucene/@diacritics, ')')) else (),
+                    indexes:inline-ignore($lucene)
+                }
+            </div>
+        else ()
+    )
+};
+
+(:
+    Helper function: an analyzer's definition: a class with its params; a chain of char filters, a tokenizer and
+    filters; or an index chain and a query chain
+:)
+declare function indexes:analyzer-definition($analyzer as element(cc:analyzer)) as item()* {
+    if ($analyzer/(cc:index | cc:query)) then
+        for $chain in $analyzer/(cc:index | cc:query)
+        return
+            <div class="indexes-analyzer-chain-group">
+                <span class="indexes-chain-label">{if ($chain instance of element(cc:index)) then 'index chain' else 'query chain'}</span>
+                {indexes:analyzer-chain($chain)}
+            </div>
+    else if ($analyzer/(cc:char-filter | cc:tokenizer | cc:filter)) then
+        indexes:analyzer-chain($analyzer)
+    else (
+        <code class="indexes-analyzer-class">{$analyzer/@class/string()}</code>,
+        if ($analyzer/cc:param) then
+            <ul class="indexes-analyzer-params">{
+                for $param in $analyzer/cc:param
+                return
+                    <li>
+                        <code>{$param/@name/string()}</code>
+                        {if ($param/@type) then ' (' || $param/@type || ')' else ()}
+                        {
+                            if ($param/@value) then (' = ', <code>{$param/@value/string()}</code>)
+                            else if ($param/cc:value) then (' = ', string-join($param/cc:value ! ('"' || . || '"'), ', '))
+                            else ()
+                        }
+                    </li>
+            }</ul>
+        else ()
+    )
+};
+
+(:
+    Helper function: a chain's components in order, each with its arguments
+:)
+declare function indexes:analyzer-chain($chain as element()) as element(ol) {
+    <ol class="indexes-analyzer-chain">{
+        for $component in $chain/(cc:char-filter | cc:tokenizer | cc:filter)
+        let $kind :=
+            switch (local-name($component))
+                case 'char-filter' return 'char filter'
+                default return local-name($component)
+        return
+            <li class="indexes-chain-{local-name($component)}">
+                <span class="indexes-chain-kind">{$kind}</span>
+                {' '}
+                <code>{$component/@name/string()}</code>
+                {
+                    for $arg in $component/@*[local-name() ne 'name'][namespace-uri() eq '']
+                    return (' ', <code class="indexes-chain-arg">{local-name($arg)}="{string($arg)}"</code>)
+                }
+            </li>
+    }</ol>
 };
 
 (:

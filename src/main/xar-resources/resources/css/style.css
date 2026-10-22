@@ -1682,3 +1682,41 @@ body > .header .logo {
     font-weight: 600;
     margin-left: 8px;
 }
+
+.indexes-browse .indexes-analyzers td:first-child {
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.indexes-browse .indexes-analyzers tr:target td {
+    background-color: #fff8e1;
+}
+
+.indexes-browse .indexes-analyzer-chain,
+.indexes-browse .indexes-analyzer-params {
+    margin: 0;
+    padding-left: 1.5em;
+}
+
+.indexes-browse .indexes-analyzer-chain-group + .indexes-analyzer-chain-group {
+    margin-top: 6px;
+}
+
+.indexes-browse .indexes-chain-label,
+.indexes-browse .indexes-chain-kind {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+}
+
+.indexes-browse .indexes-chain-arg {
+    color: #555;
+}
+
+.indexes-browse .indexes-lucene-global {
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    color: #666;
+}
